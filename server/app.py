@@ -14,6 +14,10 @@ migrate = Migrate(app, db)
 
 db.init_app(app)
 
+# Ensure database tables are created
+with app.app_context():
+    db.create_all()
+
 @app.route('/messages', methods=['GET'])
 def messages():
     '''Returns all messages sorted by created_at in ascending order'''
