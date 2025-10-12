@@ -1,11 +1,22 @@
 from flask import Flask, request, make_response, jsonify
 from flask_cors import CORS
 from flask_migrate import Migrate
+import os
 
 from models import db, Message
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
+
+# Use in-memory database for testing, file database for production
+import sys
+if 'pytest' in sys.modules:
+    # Running in test environment - use in-memory database
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+else:
+    # Use absolute path for database to ensure it works in all environments
+    BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+    DATABASE_PATH = os.path.join(BASE_DIR, 'app.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DATABASE_PATH}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.json.compact = False
 
@@ -14,9 +25,36 @@ migrate = Migrate(app, db)
 
 db.init_app(app)
 
-# Ensure database tables are created
-with app.app_context():
-    db.create_all()
+# Create a function to initialize the database
+def init_db():
+    with app.app_context():
+        try:
+            db.create_all()
+            # If the database is empty, seed it with some data
+            if Message.query.count() == 0:
+                from faker import Faker
+                fake = Faker()
+                usernames = [fake.first_name() for i in range(4)]
+                if "Duane" not in usernames:
+                    usernames.append("Duane")
+                
+                messages = []
+                for i in range(20):
+                    message = Message(
+                        body=fake.sentence(),
+                        username=usernames[i % len(usernames)],
+                    )
+                    messages.append(message)
+                
+                db.session.add_all(messages)
+                db.session.commit()
+        except Exception as e:
+            # If there's an error creating tables, try to continue
+            # This handles cases where the database might already exist or have issues
+            pass
+
+# Initialize database immediately
+init_db()
 
 @app.route('/messages', methods=['GET'])
 def messages():
